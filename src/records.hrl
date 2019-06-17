@@ -10,4 +10,4 @@
 
 -record(users, {username, fullname, status,  birthdate, password, date, friends=[]}).
 
--record(messages, {date, sender, receiver=[], content}).
+-record(messages, {date, sender, receiver, content}).
