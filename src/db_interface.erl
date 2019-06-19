@@ -38,7 +38,7 @@ reset() ->
   mnesia:delete_schema([node()]).
 
 %%--------------------------------------------------- User API ------------------------------------------------------------
-create_user({Username, Fullname, Birthdate, Password}) ->
+create_user({Username, Fullname, Password, Birthdate}) ->
   create_table(Username, record_info(fields, messages), [{record_name, messages}, {type, bag}]),
   User = #users{username = Username, fullname = Fullname, status = online, birthdate = Birthdate, password = Password, date = calendar:local_time()},
   insert(User).
@@ -118,7 +118,7 @@ return_message_at_time(Username, Time) ->
 create_table(Name, Attributes, Options) ->
   mnesia:create_table(Name,
                      [{attributes, Attributes},
-                      {disc_copies, [?SERVER]} | Options]).
+                      {disc_copies, [?SERVER_NODE]} | Options]).
 
 insert(Record) ->
   F = fun() ->
