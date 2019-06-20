@@ -8,6 +8,6 @@
 %%%-------------------------------------------------------------------
 -author("hi").
 
--record(users, {username, fullname, status,  birthdate, password, date, friends=[]}).
+-record(users, {username, fullname, status,  password, birthdate, date, friends=[]}).
 
 -record(messages, {date, sender, receiver, content}).

@@ -14,7 +14,8 @@
 %% API
 -export([
   start/0,
-  stop/0
+  stop/0,
+  state/0
   ]).
 
 %% gen_server callbacks
@@ -49,6 +50,9 @@ start() ->
 
 stop() ->
   gen_server:stop(?SERVER_NAME, exit, 30).
+
+state() ->
+  gen_server:call(?SERVER_NAME, state).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -86,19 +90,19 @@ init([]) ->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_call(default, _From, State) ->
-  {reply, successful, State};
+handle_call(state, _From, State) ->
+  {reply, State, State};
 %%   handling client gen_server requests
 handle_call({signup, Username, Fullname, Password, Birthdate}, {Pid, _}, State) ->
        io:format("Username ~p tries to sign up!~n~p~n",[Username,Pid]),
        case is_username_taken(Username) of
-         true ->   case db_interface:create_user({Username, Fullname, Password, Birthdate}) of
+         false ->   case db_interface:create_user({Username, Fullname, Password, Birthdate}) of
                         ok -> io:format("User ~p signed up successfully~n",[Username]),
                               {reply, successful, update_state({Username, Pid},State)};
                         Error -> io:format("failed sign up attempt~n",[]),
                                  {reply, Error, State}
                     end;
-         false ->  {reply, username_taken, State}
+         true ->  {reply, username_taken, State}
        end;
 handle_call({signin, Username, Password}, {Pid, _}, State) ->
   io:format("Username ~p tries to sign in!~n~p",[Username,Pid]),
@@ -107,20 +111,43 @@ handle_call({signin, Username, Password}, {Pid, _}, State) ->
     [User] -> case  User#users.password == Password of
               true -> io:format("User ~p signed in successfully~n",[Username]),
                       {reply, successful, update_state({Username, Pid},State)};
-              _ ->    io:format("incorrect password attempt~n",[]),
+              _ ->    io:format("incorrect password attempt ~p~n",[User#users.password]),
                       {reply, incorrect_password, State}
             end
   end;
+handle_call({signout, Username}, _From, State) ->
+  io:format("Username ~p tries to sign out!~n",[Username]),
+  case db_interface:return_user(Username) of
+    [] -> {reply, username_not_found, State};
+    [_] -> case db_interface:update_user(Username, status, offline) of
+                ok -> io:format("User ~p signed out successfully!~n",[Username]),
+                      {reply, signed_out_successfully, update_state({delete, Username}, State)}
+           end
+  end;
 handle_call({delete, Username, Password}, _From, State) ->
   io:format("Username ~p tries to delete the account~n",[Username]),
-  case db_interface:return_friends(Username) of
+  case db_interface:return_user(Username) of
     [] -> {reply, username_not_found, State};
     [User] ->  case  User#users.password == Password of
                      true -> io:format("User ~p deleted successfully~n",[Username]),
-                             {reply, db_interface:delete_user(Username), update_state({delete, Username}, State)};
+                             db_interface:delete_user(Username) == ok andalso
+                             {reply, successful, update_state({delete, Username}, State)};
                      _ ->    io:format("incorrect password attempt~n",[]),
                              {reply, incorrect_password, State}
                end
+  end;
+handle_call({update, Username, What_to_update, New_Value}, _From, State) ->
+  io:format("Username ~p tries to update ~p ~n",[Username, What_to_update]),
+  case db_interface:return_user(Username) of
+    [] -> {reply, username_not_found, State};
+    [_User] ->  io:format("Username ~p updated ~p with new value ~n",[Username, What_to_update]),
+                {reply, db_interface:update_user(Username, What_to_update, New_Value), State}
+  end;
+handle_call({user_info, Username}, _From, State) ->
+  io:format("User ~p requesting user's information!~n",[Username]),
+  case db_interface:return_user(Username) of
+    [] -> {reply, username_not_found, State};
+    [User] -> {reply, User, State}
   end;
 handle_call({send_message, Sender, Receiver, Message}, _From, State) ->
   io:format("Username ~p tries to send message to ~p~n",[Sender, Receiver]),
@@ -129,8 +156,25 @@ handle_call({send_message, Sender, Receiver, Message}, _From, State) ->
     {_, []} -> {reply, receiver_not_exist, State};
     {_, [User2]} -> db_interface:put_message(send, Sender, Receiver, Message),
          db_interface:put_message(reseive, Sender, Receiver, Message),
-         io:format("~p ------send------> ~p~n",[Sender, Receiver]),
-         User2#users.status == online andalso fetch_user_pid(Receiver, State) ! Sender ++ " sent: " ++ Message
+         io:format("~p ------send------> ~p ! ~p~n",[Sender, Receiver, fetch_user_pid(Receiver, State)]),
+         User2#users.status == online andalso fetch_user_pid(Receiver, State) ! {Sender,  "---------->", Message},
+         {reply, sent, State}
+  end;
+handle_call({send_request, Username, User}, _From, State) ->
+  io:format("Username ~p add ~p as a friend",[Username, User]),
+  case {db_interface:return_user(Username), db_interface:return_user(User)} of
+    {[], _} -> {reply, your_username_not_registered, State};
+    {_, []} -> {reply, user_not_exist, State};
+    {[User1], [User2]} -> lists:member(1,[1,2,3,4]),
+           case lists:member(User, User1#users.friends)  of
+             false ->
+               New_Friends =  [User|User1#users.friends],
+               db_interface:update_user(Username, friends, New_Friends),
+               io:format("~p added  ~p as a fried!~n",[Username, User]),
+               User2#users.status == online andalso fetch_user_pid(User, State) ! {Username,  "added you as a friend"},
+               {reply, sent, State};
+             true ->  {reply, already_added, State}
+           end
   end;
 handle_call({}, _From, State) ->
   {reply, sent, State}.
@@ -199,15 +243,18 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 is_username_taken(Username) ->
-  Username == not_logged_in andalso db_interface:return_user(Username) == [].
+  Username == not_logged_in orelse db_interface:return_user(Username) =/= [].
 
 update_state({delete, Username}, State) ->
   Users = State#state.users,
-  State#state{users = lists:keydelete(Username, 1,Users)};
+  Time = State#state.started,
+  #state{started = Time, users = lists:keydelete(Username, 1, Users)};
 update_state(User, State) ->
   Old_users = State#state.users,
-  State#state{users = User++Old_users}.
+  Time = State#state.started,
+  #state{started = Time, users = [User]++Old_users}.
 
 fetch_user_pid(Receiver, State) ->
-  Users = State#state.users,
-  lists:keyfind(Receiver, 1, Users).
+   Users = State#state.users,
+   {_, Pid} = lists:keyfind(Receiver, 1, Users),
+   Pid.

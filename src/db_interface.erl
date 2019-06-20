@@ -40,7 +40,7 @@ reset() ->
 %%--------------------------------------------------- User API ------------------------------------------------------------
 create_user({Username, Fullname, Password, Birthdate}) ->
   create_table(Username, record_info(fields, messages), [{record_name, messages}, {type, bag}]),
-  User = #users{username = Username, fullname = Fullname, status = online, birthdate = Birthdate, password = Password, date = calendar:local_time()},
+  User = #users{username = Username, fullname = Fullname, status = online, password = Password, birthdate = Birthdate, date = calendar:local_time()},
   insert(User).
 
 return_user(Username) ->

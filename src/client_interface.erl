@@ -13,19 +13,21 @@
 -include("records.hrl").
 -include("macros.hrl").
 
--record(state, {username = not_logged_in, node}).
+-record(state, {username, node}).
 
 -compile(export_all).
 
 %% Starting
 -export([
-  start/0
+  start/0,
+  stop/0
 ]).
 
 %% API
 -export([
   sign_up/4,
   sign_in/2,
+  sign_out/0,
   delete/2,
   send_message/2,
   send_request/1,
@@ -48,7 +50,10 @@ start() ->
   io:format("Sign in with sign_in(Username, Password)~nSign up with sign_up(Username, Fullname, Password, Birthdate)~n",[]).
 
 init(_) ->
-  {ok, {}}.
+  {ok, #state{username = not_logged_in}}.
+
+stop() ->
+  gen_server:stop(?CLIENT_NAME, exit, 30).
 
 %%------------------------------------ User API ----------------------------------------------------------------------
 
@@ -60,13 +65,17 @@ sign_up(Username, Fullname, Password, Birthdate) ->
   end.
 
 sign_in(Username, Password) ->
-  case gen_server:cast(?CLIENT_NAME, {signin, Username, Password}) of
+  case gen_server:call(?CLIENT_NAME, {signin, Username, Password}) of
     successful -> io:format("Signed in successfully~nCheck your setting and options by setting()~n",[]);
     Error -> Error
   end.
 
+sign_out() ->
+   gen_server:call(?CLIENT_NAME, signout).
+
 setting()->
-  User = gen_server:call(?CLIENT_NAME, user_info),
+  User = gen_server:call(?CLIENT_NAME, {user_info}),
+  io:format("~p~n",[User]),
   io:format("-------------------------- User Informations --------------------------~nUsername: ~p~nFullname: ~p~nBirthdate: ~p~nFriends: ~p~n",
                             [User#users.username, User#users.fullname, User#users.birthdate, User#users.friends]),
   io:format("-------------------------- Settings --------------------------~nSend message: send_message(User, Message)~nSend request: send_request(User)~n"++
@@ -87,27 +96,44 @@ update_profile(What_to_Update, New_Value) ->
 %%------------------------------------- gen_server callback functions ------------------------------------------------
 
 handle_call(Request={signup, Username, _Fullname, _Password, _Birthdate}, _From, State) ->
-  case gen_server:call({?SERVER_NAME, ?SERVER_NODE}, Request) of
-       successful -> {reply, successful, #state{username = Username, node = node()}};
-       Not_Valid -> {reply, Not_Valid, State}
+  if
+    State#state.username == not_logged_in ->
+    case gen_server:call({?SERVER_NAME, ?SERVER_NODE}, Request) of
+          successful -> {reply, successful, #state{username = Username, node = node()}};
+          Not_Valid -> {reply, Not_Valid, State}
+    end;
+    true ->  {reply, aready_logged_in, State}
   end;
 handle_call(Request={signin, Username, _Password}, _From, State) ->
-  case gen_server:call({?SERVER_NAME, ?SERVER_NODE}, Request) of
-       successful -> {reply, successful, #state{username = Username, node = node()}};
-       Not_Valid -> {reply, Not_Valid, State}
+  if
+    State#state.username == not_logged_in ->
+    case gen_server:call({?SERVER_NAME, ?SERVER_NODE}, Request) of
+          successful -> {reply, successful, #state{username = Username, node = node()}};
+          Not_Valid ->  {reply, Not_Valid, State}
+    end;
+    true ->  {reply, aready_logged_in, State}
+  end;
+handle_call(signout, _From, State) ->
+  if
+    State#state.username /= not_logged_in ->
+      case gen_server:call({?SERVER_NAME, ?SERVER_NODE}, {signout,State#state.username}) of
+           signed_out_successfully -> {reply, signed_out_successfully, #state{username = not_logged_in}};
+           Err -> {reply, Err, State}
+      end;
+      true -> {reply, not_logged_in, State}
   end;
 handle_call(Request={delete, _Username, _Password}, _From, State) ->
   if
     State#state.username /= not_logged_in ->
   case gen_server:call({?SERVER_NAME, ?SERVER_NODE}, Request) of
-       successful -> {reply, deleted_successfully, #state{}};
+       successful -> {reply, deleted_successfully, #state{username = not_logged_in}};
        Not_Valid -> {reply, Not_Valid, State}
   end;
     true -> {reply, not_logged_in, State}
   end;
 handle_call(Request, _From, State) ->
   case State#state.username /=  not_logged_in of
-       true ->  {reply, gen_server:call({?SERVER_NAME, ?SERVER_NAME}, append_into_tuple(State#state.username, Request)), State};
+       true ->  {reply, gen_server:call({?SERVER_NAME, ?SERVER_NODE}, append_into_tuple(State#state.username, Request)), State};
        false -> {reply, not_logged_in, State}
   end.
 
@@ -115,7 +141,7 @@ handle_cast(_Request, State) ->
   {noreply, State}.
 
 handle_info(Info, State) ->
-  io:format("Info: ~p,          State: ~p",[Info, State]),
+  io:format("~p~n",[Info]),
   {noreply, State}.
  %% {noreply,NewState,Timeout}
  %% {noreply,NewState,hibernate}
@@ -133,3 +159,6 @@ code_change(_Oldversion, _State, _Extra) ->
 append_into_tuple(Atom, Tuple) ->
   [H|T]=tuple_to_list(Tuple),
   list_to_tuple([H,Atom|T]).
+
+%% debugging printing the line
+pr(L) -> io:format("Line ~p~n",[L]).
