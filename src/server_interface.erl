@@ -176,8 +176,8 @@ handle_call({send_request, Username, User}, _From, State) ->
              true ->  {reply, already_added, State}
            end
   end;
-handle_call({}, _From, State) ->
-  {reply, sent, State}.
+handle_call(_Request, _From, State) ->
+  {reply, unknown_request, State}.
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
