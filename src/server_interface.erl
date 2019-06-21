@@ -110,6 +110,7 @@ handle_call({signin, Username, Password}, {Pid, _}, State) ->
     [] -> {reply, username_not_found, State};
     [User] -> case  User#users.password == Password of
               true -> io:format("User ~p signed in successfully~n",[Username]),
+                      db_interface:update_user(Username, status, online),
                       {reply, successful, update_state({Username, Pid},State)};
               _ ->    io:format("incorrect password attempt ~p~n",[User#users.password]),
                       {reply, incorrect_password, State}
@@ -156,25 +157,41 @@ handle_call({send_message, Sender, Receiver, Message}, _From, State) ->
     {_, []} -> {reply, receiver_not_exist, State};
     {_, [User2]} -> db_interface:put_message(send, Sender, Receiver, Message),
          db_interface:put_message(reseive, Sender, Receiver, Message),
-         io:format("~p ------send------> ~p ! ~p~n",[Sender, Receiver, fetch_user_pid(Receiver, State)]),
-         User2#users.status == online andalso fetch_user_pid(Receiver, State) ! {Sender,  "---------->", Message},
+         io:format("~p ------send------> ~p!~n",[Sender, Receiver]),
+         User2#users.status == online andalso handle_message(Sender, Receiver, State, {Sender,  "---------------->", Message}),
          {reply, sent, State}
   end;
 handle_call({send_request, Username, User}, _From, State) ->
-  io:format("Username ~p add ~p as a friend",[Username, User]),
+  io:format("Username ~p tries to add ~p as a friend\n",[Username, User]),
   case {db_interface:return_user(Username), db_interface:return_user(User)} of
     {[], _} -> {reply, your_username_not_registered, State};
     {_, []} -> {reply, user_not_exist, State};
-    {[User1], [User2]} -> lists:member(1,[1,2,3,4]),
+    {[User1], [User2]} ->
            case lists:member(User, User1#users.friends)  of
              false ->
                New_Friends =  [User|User1#users.friends],
                db_interface:update_user(Username, friends, New_Friends),
                io:format("~p added  ~p as a fried!~n",[Username, User]),
-               User2#users.status == online andalso fetch_user_pid(User, State) ! {Username,  "added you as a friend"},
+               User2#users.status == online andalso handle_message(Username, User, State, {Username, "added you as a friend"}),
                {reply, sent, State};
              true ->  {reply, already_added, State}
            end
+  end;
+handle_call({delete_request, Username, User}, _From, State) ->
+  io:format("Username ~p tries to delete ~p from friends list\n",[Username, User]),
+  case {db_interface:return_user(Username), db_interface:return_user(User)} of
+    {[], _} -> {reply, your_username_not_registered, State};
+    {_, []} -> {reply, user_not_exist, State};
+    {[User1], [User2]} ->
+      case lists:member(User, User1#users.friends)  of
+        true ->
+          New_Friends =  User1#users.friends --  [User],
+          db_interface:update_user(Username, friends, New_Friends),
+          io:format("~p deleted  ~p from frieds list!~n",[Username, User]),
+          User2#users.status == online andalso handle_message(Username, User, State, {Username, "deleted you from frieds list"}),
+          {reply, sent, State};
+        false ->  {reply, not_on_your_friend_list, State}
+      end
   end;
 handle_call(_Request, _From, State) ->
   {reply, unknown_request, State}.
@@ -254,7 +271,10 @@ update_state(User, State) ->
   Time = State#state.started,
   #state{started = Time, users = [User]++Old_users}.
 
-fetch_user_pid(Receiver, State) ->
-   Users = State#state.users,
-   {_, Pid} = lists:keyfind(Receiver, 1, Users),
-   Pid.
+
+handle_message(Username, User, State, Message) ->
+  Users = State#state.users,
+  case lists:keyfind(User, 1, Users) of
+    false -> offline;
+    {_, Pid} -> Pid ! Message
+  end.

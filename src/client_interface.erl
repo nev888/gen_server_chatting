@@ -93,6 +93,9 @@ send_request(User) ->
 update_profile(What_to_Update, New_Value) ->
   gen_server:call(?CLIENT_NAME, {update, What_to_Update, New_Value}).
 
+delete_request(User) ->
+  gen_server:call(?CLIENT_NAME, {delete_request, User}).
+
 %%------------------------------------- gen_server callback functions ------------------------------------------------
 
 handle_call(Request={signup, Username, _Fullname, _Password, _Birthdate}, _From, State) ->
