@@ -8,6 +8,6 @@
 %%%-------------------------------------------------------------------
 -author("hi").
 
--define(SERVER_NODE, 'server@localhost').
+-define(SERVER_NODE, 'server@192.168.0.103').
 -define(SERVER_NAME, message_server).
 -define(CLIENT_NAME, client_name).

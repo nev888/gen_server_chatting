@@ -26,7 +26,7 @@ start() ->
   mnesia:start().
 
 install() ->
-  ok = mnesia:create_schema([node()]),
+  mnesia:create_schema([node()]),
   mnesia:start(),
   create_table(users, record_info(fields, users), [{type, set}]).
 

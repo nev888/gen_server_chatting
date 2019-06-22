@@ -45,8 +45,34 @@
 %%--------------------------------------------------------------------
 
 start() ->
-  db_interface:start(),
-  gen_server:start({local, ?SERVER_NAME}, ?MODULE, [], []).
+  mnesia:start(),
+  case has_right_to_use_mnesia(node()) of
+    true -> init_mnesia(),
+            gen_server:start({local, ?SERVER_NAME}, ?MODULE, [], []);
+    false -> {stop, {no_right, no_right_message()}}
+  end.
+
+has_right_to_use_mnesia(Node)->
+  lists:member(Node,mnesia:system_info(db_nodes)).
+
+init_mnesia() ->
+  case mnesia:table_info(schema, storage_type) of
+    ram_copies ->
+      %% The schema should be stored on disc
+      mnesia:change_table_copy_type(schema, node(), disc_copies),
+
+      %% checkpoint counter table (needs a better name)
+      db_interface:create_table(users, record_info(fields, users), [{type, set}]),
+      empty;
+
+    disc_copies ->
+      mnesia:wait_for_tables(mnesia:system_info(tables),infinity),
+      exists
+  end.
+
+no_right_message()->
+  io_lib:format("The Mnesia data directory (~s) can only be used from the following node(s): ~p.~n",
+    [mnesia:system_info(directory), mnesia:system_info(db_nodes)]).
 
 stop() ->
   gen_server:stop(?SERVER_NAME, exit, 30).
@@ -272,7 +298,7 @@ update_state(User, State) ->
   #state{started = Time, users = [User]++Old_users}.
 
 
-handle_message(Username, User, State, Message) ->
+handle_message(_Username, User, State, Message) ->
   Users = State#state.users,
   case lists:keyfind(User, 1, Users) of
     false -> offline;
