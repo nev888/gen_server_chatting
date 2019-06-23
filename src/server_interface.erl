@@ -219,6 +219,36 @@ handle_call({delete_request, Username, User}, _From, State) ->
         false ->  {reply, not_on_your_friend_list, State}
       end
   end;
+handle_call({get_all_messages, Username}, _From, State) ->
+  io:format("User ~p requesting all messages!~n",[Username]),
+  case is_user_logged_in(Username, State#state.users) of
+    false -> {reply, not_online, State};
+    true -> {reply, db_interface:return_all_messages(Username), State}
+  end;
+handle_call({get_specific_user_messages, Username, User}, _From, State) ->
+  io:format("User ~p requesting messages with specifi user!~n",[Username]),
+  case is_user_logged_in(Username, State#state.users) of
+    false -> {reply, not_online, State};
+    true -> {reply, db_interface:return_messages_specific_person(Username, User), State}
+  end;
+handle_call({get_a_message_with_key, Username, Key}, _From, State) ->
+  io:format("User ~p requesting a message at ~p!~n",[Username, Key]),
+  case is_user_logged_in(Username, State#state.users) of
+    false -> {reply, not_online, State};
+    true -> {reply, db_interface:return_message_at_time(Username, Key), State}
+  end;
+handle_call({delete_a_message, Username, Key}, _From, State) ->
+  io:format("User ~p try to delete a message at ~p!~n",[Username, Key]),
+  case is_user_logged_in(Username, State#state.users) of
+    false -> {reply, not_online, State};
+    true -> {reply, db_interface:delete_message(Username, Key), State}
+  end;
+handle_call({delete_all_messages, Username}, _From, State) ->
+  io:format("User ~p try to delete all messages!~n",[Username]),
+  case is_user_logged_in(Username, State#state.users) of
+    false -> {reply, not_online, State};
+    true -> {reply, db_interface:delete_all_messages(Username), State}
+  end;
 handle_call(_Request, _From, State) ->
   {reply, unknown_request, State}.
 %%--------------------------------------------------------------------
@@ -288,6 +318,12 @@ code_change(_OldVsn, State, _Extra) ->
 is_username_taken(Username) ->
   Username == not_logged_in orelse db_interface:return_user(Username) =/= [].
 
+is_user_logged_in(Username, Online_Users_List)->
+  case lists:keyfind(Username, 1, Online_Users_List) of
+    false -> false;
+    _ -> true
+  end.
+
 update_state({delete, Username}, State) ->
   Users = State#state.users,
   Time = State#state.started,
@@ -296,7 +332,6 @@ update_state(User, State) ->
   Old_users = State#state.users,
   Time = State#state.started,
   #state{started = Time, users = [User]++Old_users}.
-
 
 handle_message(_Username, User, State, Message) ->
   Users = State#state.users,

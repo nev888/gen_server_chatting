@@ -78,8 +78,10 @@ setting()->
   io:format("~p~n",[User]),
   io:format("-------------------------- User Informations --------------------------~nUsername: ~p~nFullname: ~p~nBirthdate: ~p~nFriends: ~p~n",
                             [User#users.username, User#users.fullname, User#users.birthdate, User#users.friends]),
-  io:format("-------------------------- Settings --------------------------~nSend message: send_message(User, Message)~nSend request: send_request(User)~n"++
-   "Update profile: update_profile(What_to_update, New_Value)~nDelete account: delete(Username, Password)~n",[]).
+  io:format("-------------------------- Settings --------------------------~nSend message: send_message(User, Message)~nSend request: send_request(User)~n" ++
+   "Update profile: update_profile(What_to_update, New_Value)~nDelete account: delete(Username, Password)~n" ++
+    "Return all messages: return_all_message()~nUser specific message: user_message(User)~n" ++
+    "Message at: message_at_time(Key)~nDelete all messages delete_all_messages()~nDelete a message delete_message(Key)~n" ,[]).
 
 delete(Username, Password) ->
   gen_server:call(?CLIENT_NAME, {delete, Username, Password}).
@@ -96,6 +98,20 @@ update_profile(What_to_Update, New_Value) ->
 delete_request(User) ->
   gen_server:call(?CLIENT_NAME, {delete_request, User}).
 
+return_all_message() ->
+  gen_server:call(?CLIENT_NAME, {get_all_messages}).
+
+user_message(Username) ->
+  gen_server:call(?CLIENT_NAME, {get_specific_user_messages, Username}).
+
+message_at_time(Time) ->
+  gen_server:call(?CLIENT_NAME, {get_a_message_with_key, Time}).
+
+delete_message(Key) ->
+  gen_server:call(?CLIENT_NAME, {delete_a_message, Key}).
+
+delete_all_messages() ->
+  gen_server:call(?CLIENT_NAME, {delete_all_messages}).
 %%------------------------------------- gen_server callback functions ------------------------------------------------
 
 handle_call(Request={signup, Username, _Fullname, _Password, _Birthdate}, _From, State) ->
@@ -160,8 +176,21 @@ code_change(_Oldversion, _State, _Extra) ->
 %% private methods
 
 append_into_tuple(Atom, Tuple) ->
-  [H|T]=tuple_to_list(Tuple),
-  list_to_tuple([H,Atom|T]).
+  List=tuple_to_list(Tuple),
+  case List of
+       [] -> {Atom};
+       [H] -> {H, Atom};
+       [H|T] ->  list_to_tuple([H,Atom|T])
+  end.
+
 
 %% debugging printing the line
 pr(L) -> io:format("Line ~p~n",[L]).
+
+%% analyzing
+-define(SQAURE(Anything), square(fun() -> Anything end)).
+
+square(X) -> X+X.
+
+macro_test() ->
+  ?SQAURE(lists:foreach(fun square/1,[1,2,3,4,5])).

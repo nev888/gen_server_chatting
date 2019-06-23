@@ -91,6 +91,10 @@ put_message(reseive, Sender, Receiver, Content) ->
 delete_message(Tablename, Timestamp) ->
   mnesia:dirty_delete({Tablename, Timestamp}).
 
+delete_all_messages(Username) ->
+    lists:foreach(fun mnesia:dirty_delete/1,
+    [{Username, Key} || Key <- mnesia:ets(mnesia:all_keys, [Username])]).
+
 return_all_messages(Username) ->
 Record = #messages{sender = '$1', receiver = '$2', date = '$3', content = '$4'},
 F = fun() ->
@@ -133,7 +137,7 @@ insert(Table, Record) ->
       end,
   mnesia:activity(transaction, F).
 
-
+flattener([]) ->  [];
 flattener([H]) -> [list_to_tuple(H)];
 flattener([H|T]) ->
   [list_to_tuple(H)|flattener(T)].
