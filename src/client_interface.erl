@@ -46,8 +46,10 @@
 ]).
 %%-------------------------------------- Starting the client -----------------------------------------------------------
 start() ->
-  gen_server:start({local, ?CLIENT_NAME}, ?MODULE, [], []),
-  io:format("Sign in with sign_in(Username, Password)~nSign up with sign_up(Username, Fullname, Password, Birthdate)~n",[]).
+  case gen_server:start({local, ?CLIENT_NAME}, ?MODULE, [], []) of
+    {ok, Pid} -> io:format("Application started on ~p~nSign in with sign_in(Username, Password)~nSign up with sign_up(Username, Fullname, Password, Birthdate)~n",[Pid]);
+     Error -> Error
+  end.
 
 init(_) ->
   {ok, #state{username = not_logged_in}}.
@@ -186,11 +188,3 @@ append_into_tuple(Atom, Tuple) ->
 
 %% debugging printing the line
 pr(L) -> io:format("Line ~p~n",[L]).
-
-%% analyzing
--define(SQAURE(Anything), square(fun() -> Anything end)).
-
-square(X) -> X+X.
-
-macro_test() ->
-  ?SQAURE(lists:foreach(fun square/1,[1,2,3,4,5])).

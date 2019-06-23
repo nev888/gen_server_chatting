@@ -339,3 +339,5 @@ handle_message(_Username, User, State, Message) ->
     false -> offline;
     {_, Pid} -> Pid ! Message
   end.
+
+

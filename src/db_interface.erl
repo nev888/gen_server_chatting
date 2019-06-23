@@ -19,6 +19,8 @@
 -include("macros.hrl").
 -include("records.hrl").
 
+-define(Exec(Body), exec(fun() -> Body end)).
+
 -compile(export_all).
 
 %% public API
@@ -92,8 +94,8 @@ delete_message(Tablename, Timestamp) ->
   mnesia:dirty_delete({Tablename, Timestamp}).
 
 delete_all_messages(Username) ->
-    lists:foreach(fun mnesia:dirty_delete/1,
-    [{Username, Key} || Key <- mnesia:ets(mnesia:all_keys, [Username])]).
+    ?Exec(lists:foreach(fun mnesia:delete/1,
+    [{Username, Key} || Key <- mnesia:all_keys(Username)])).
 
 return_all_messages(Username) ->
 Record = #messages{sender = '$1', receiver = '$2', date = '$3', content = '$4'},
@@ -141,3 +143,8 @@ flattener([]) ->  [];
 flattener([H]) -> [list_to_tuple(H)];
 flattener([H|T]) ->
   [list_to_tuple(H)|flattener(T)].
+
+exec(Fun) -> exec(Fun, wr).
+
+exec(Fun, wr) ->
+  mnesia:async_dirty(Fun).
