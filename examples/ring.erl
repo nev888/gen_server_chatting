@@ -37,7 +37,7 @@ ring(I, N, M, First_process, Main_process) ->
 loop(0, N, N, _, Main_process) ->
      io:format("Ring process ~p (~p) finished~n", [N, self()]),
      Main_process ! ended;
-loop(0, I, _, _, _) -> 
+loop(0, I, _, _, _) ->
      io:format("Ring process ~p (~p) finished~n", [I, self()]);
 loop(M, I, N, Next_process, Main_process) ->
      receive
@@ -47,4 +47,3 @@ loop(M, I, N, Next_process, Main_process) ->
                Next_process ! {send, I, self()},
                loop(M-1, I, N, Next_process, Main_process)
      end.
-

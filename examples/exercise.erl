@@ -37,18 +37,24 @@ worker2(Pid1, M) ->
   end.
 
 start22(M) ->
-   Pid1 = spawn(?MODULE, worker, [self(), M]),
-          spawn(?MODULE, worker, [Pid1, M]).
+      spawn(?MODULE, worker,[M, self()]),
+      receive
+        Any -> Any
+      end.
 
+worker(M, MainProcess) when is_integer(M)->
+  Next_process = spawn(?MODULE, worker, [MainProcess, M]),
+  Next_process ! {M, self()},
+  loop(M, MainProcess);
 worker(Pid, M) ->
-  Pid ! {M, self()},
+  loop(M, Pid).
+
+loop(M, MainProcess) ->
   receive
-  {0, _} -> stoped;
-  {N, Pid2} -> io:format("result: ~p~n",[N]), Pid2 ! {N-1, self()}, worker(Pid, N-1)
+  {0, _} -> MainProcess ! stoped;
+  {N, Pid2} -> io:format("~p sent result: ~p to ~p~n",[Pid2, N, self()]), Pid2 ! {N-1, self()}, loop(N-1, MainProcess)
   end.
 
 start_ring(Pro, Mess) ->
    lists:map(fun(_) ->
-      spawn(.
-  
-
+      ok end).
