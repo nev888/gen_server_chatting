@@ -60,12 +60,12 @@ init_mnesia() ->
     ram_copies ->
       %% The schema should be stored on disc
       mnesia:change_table_copy_type(schema, node(), disc_copies),
-
-      %% checkpoint counter table (needs a better name)
+      io:format("ram copies~n"),
       db_interface:create_table(users, record_info(fields, users), [{type, set}]),
       empty;
 
     disc_copies ->
+      io:format("disc copies~n"),
       mnesia:wait_for_tables(mnesia:system_info(tables),infinity),
       exists
   end.
@@ -75,7 +75,7 @@ no_right_message()->
     [mnesia:system_info(directory), mnesia:system_info(db_nodes)]).
 
 stop() ->
-  gen_server:stop(?SERVER_NAME, exit, 30).
+  gen_server:stop(?SERVER_NAME, shutdown, 30).
 
 state() ->
   gen_server:call(?SERVER_NAME, state).

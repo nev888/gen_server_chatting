@@ -1,0 +1,347 @@
+File generated from /home/hi/Dropbox/Learning/gen_server_chatting/src/server_interface.erl by COVER 2019-08-22 at 16:24:22
+
+****************************************************************************
+
+        |  %%%-------------------------------------------------------------------
+        |  %%% @author hi
+        |  %%% @copyright (C) 2019, <COMPANY>
+        |  %%% @doc
+        |  %%%
+        |  %%% @end
+        |  %%% Created : 17. Jun 2019 21:24
+        |  %%%-------------------------------------------------------------------
+        |  -module(server_interface).
+        |  -author("hi").
+        |  
+        |  -behaviour(gen_server).
+        |  
+        |  %% API
+        |  -export([
+        |    start/0,
+        |    stop/0,
+        |    state/0
+        |    ]).
+        |  
+        |  %% gen_server callbacks
+        |  -export([init/1,
+        |    handle_call/3,
+        |    handle_cast/2,
+        |    handle_info/2,
+        |    terminate/2,
+        |    code_change/3]).
+        |  
+        |  -compile(export_all).
+        |  
+        |  -include("records.hrl").
+        |  -include("macros.hrl").
+        |  
+        |  -record(state, {started, users}).
+        |  
+        |  %%%===================================================================
+        |  %%% API
+        |  %%%===================================================================
+        |  
+        |  %%--------------------------------------------------------------------
+        |  %% @doc
+        |  %% Starts the server
+        |  %%
+        |  %% @end
+        |  %%--------------------------------------------------------------------
+        |  
+        |  start() ->
+     0..|    mnesia:start(),
+     0..|    case has_right_to_use_mnesia(node()) of
+     0..|      true -> init_mnesia(),
+     0..|              gen_server:start({local, ?SERVER_NAME}, ?MODULE, [], []);
+     0..|      false -> {stop, {no_right, no_right_message()}}
+        |    end.
+        |  
+        |  has_right_to_use_mnesia(Node)->
+     0..|    lists:member(Node,mnesia:system_info(db_nodes)).
+        |  
+        |  init_mnesia() ->
+     0..|    case mnesia:table_info(schema, storage_type) of
+        |      ram_copies ->
+        |        %% The schema should be stored on disc
+     0..|        mnesia:change_table_copy_type(schema, node(), disc_copies),
+     0..|        io:format("ram copies~n"),
+     0..|        db_interface:create_table(users, record_info(fields, users), [{type, set}]),
+     0..|        empty;
+        |  
+        |      disc_copies ->
+     0..|        io:format("disc copies~n"),
+     0..|        mnesia:wait_for_tables(mnesia:system_info(tables),infinity),
+     0..|        exists
+        |    end.
+        |  
+        |  no_right_message()->
+     0..|    io_lib:format("The Mnesia data directory (~s) can only be used from the following node(s): ~p.~n",
+        |      [mnesia:system_info(directory), mnesia:system_info(db_nodes)]).
+        |  
+        |  stop() ->
+     0..|    gen_server:stop(?SERVER_NAME, shutdown, 30).
+        |  
+        |  state() ->
+     1..|    gen_server:call(?SERVER_NAME, state).
+        |  
+        |  %%%===================================================================
+        |  %%% gen_server callbacks
+        |  %%%===================================================================
+        |  
+        |  %%--------------------------------------------------------------------
+        |  %% @private
+        |  %% @doc
+        |  %% Initializes the server
+        |  %%
+        |  %% @spec init(Args) -> {ok, State} |
+        |  %%                     {ok, State, Timeout} |
+        |  %%                     ignore |
+        |  %%                     {stop, Reason}
+        |  %% @end
+        |  %%--------------------------------------------------------------------
+        |  -spec(init(Args :: term()) ->
+        |    {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
+        |    {stop, Reason :: term()} | ignore).
+        |  init([]) ->
+     0..|    {ok, #state{started = calendar:local_time(), users=[]}}.
+        |  
+        |  %%--------------------------------------------------------------------
+        |  %% @private
+        |  %% @doc
+        |  %% Handling call messages
+        |  %%
+        |  %% @end
+        |  %%--------------------------------------------------------------------
+        |  -spec(handle_call(Request :: term(), From :: {pid(), Tag :: term()},
+        |      State :: #state{}) ->
+        |    {reply, Reply :: term(), NewState :: #state{}} |
+        |    {reply, Reply :: term(), NewState :: #state{}, timeout() | hibernate} |
+        |    {noreply, NewState :: #state{}} |
+        |    {noreply, NewState :: #state{}, timeout() | hibernate} |
+        |    {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
+        |    {stop, Reason :: term(), NewState :: #state{}}).
+        |  handle_call(state, _From, State) ->
+     1..|    {reply, State, State};
+        |  %%   handling client gen_server requests
+        |  handle_call({signup, Username, Fullname, Password, Birthdate}, {Pid, _}, State) ->
+     2..|         io:format("Username ~p tries to sign up!~n~p~n",[Username,Pid]),
+     2..|         case is_username_taken(Username) of
+     1..|           false ->   case db_interface:create_user({Username, Fullname, Password, Birthdate}) of
+     1..|                          ok -> io:format("User ~p signed up successfully~n",[Username]),
+     1..|                                {reply, successful, update_state({Username, Pid},State)};
+     0..|                          Error -> io:format("failed sign up attempt~n",[]),
+     0..|                                   {reply, Error, State}
+        |                      end;
+     1..|           true ->  {reply, username_taken, State}
+        |         end;
+        |  handle_call({signin, Username, Password}, {Pid, _}, State) ->
+     5..|    io:format("Username ~p tries to sign in!~n~p",[Username,Pid]),
+     5..|    case db_interface:return_user(Username) of
+     2..|      [] -> {reply, username_not_found, State};
+     3..|      [User] -> case  User#users.password == Password of
+     2..|                true -> io:format("User ~p signed in successfully~n",[Username]),
+     2..|                        db_interface:update_user(Username, status, online),
+     2..|                        {reply, successful, update_state({Username, Pid},State)};
+     1..|                _ ->    io:format("incorrect password attempt ~p~n",[User#users.password]),
+     1..|                        {reply, incorrect_password, State}
+        |              end
+        |    end;
+        |  handle_call({signout, Username}, _From, State) ->
+     2..|    io:format("Username ~p tries to sign out!~n",[Username]),
+     2..|    case db_interface:return_user(Username) of
+     0..|      [] -> {reply, username_not_found, State};
+     2..|      [_] -> case db_interface:update_user(Username, status, offline) of
+     2..|                  ok -> io:format("User ~p signed out successfully!~n",[Username]),
+     2..|                        {reply, signed_out_successfully, update_state({delete, Username}, State)}
+        |             end
+        |    end;
+        |  handle_call({delete, Username, Password}, _From, State) ->
+     2..|    io:format("Username ~p tries to delete the account~n",[Username]),
+     2..|    case db_interface:return_user(Username) of
+     0..|      [] -> {reply, username_not_found, State};
+     2..|      [User] ->  case  User#users.password == Password of
+     2..|                       true -> io:format("User ~p deleted successfully~n",[Username]),
+     2..|                               db_interface:delete_user(Username) == ok andalso
+     2..|                               {reply, successful, update_state({delete, Username}, State)};
+     0..|                       _ ->    io:format("incorrect password attempt~n",[]),
+     0..|                               {reply, incorrect_password, State}
+        |                 end
+        |    end;
+        |  handle_call({update, Username, What_to_update, New_Value}, _From, State) ->
+     1..|    io:format("Username ~p tries to update ~p ~n",[Username, What_to_update]),
+     1..|    case db_interface:return_user(Username) of
+     0..|      [] -> {reply, username_not_found, State};
+     1..|      [_User] ->  io:format("Username ~p updated ~p with new value ~n",[Username, What_to_update]),
+     1..|                  {reply, db_interface:update_user(Username, What_to_update, New_Value), State}
+        |    end;
+        |  handle_call({user_info, Username}, _From, State) ->
+     1..|    io:format("User ~p requesting user's information!~n",[Username]),
+     1..|    case db_interface:return_user(Username) of
+     0..|      [] -> {reply, username_not_found, State};
+     1..|      [User] -> {reply, User, State}
+        |    end;
+        |  handle_call({send_message, Sender, Receiver, Message}, _From, State) ->
+     3..|    io:format("Username ~p tries to send message to ~p~n",[Sender, Receiver]),
+     3..|    case {db_interface:return_user(Sender), db_interface:return_user(Receiver)} of
+     0..|      {[], _} -> {reply, your_username_not_registered, State};
+     0..|      {_, []} -> {reply, receiver_not_exist, State};
+     3..|      {_, [User2]} -> db_interface:put_message(send, Sender, Receiver, Message),
+     3..|           db_interface:put_message(reseive, Sender, Receiver, Message),
+     3..|           io:format("~p ------send------> ~p!~n",[Sender, Receiver]),
+     3..|           User2#users.status == online andalso handle_message(Sender, Receiver, State, {Sender,  "---------------->", Message}),
+     3..|           {reply, sent, State}
+        |    end;
+        |  handle_call({send_request, Username, User}, _From, State) ->
+     1..|    io:format("Username ~p tries to add ~p as a friend\n",[Username, User]),
+     1..|    case {db_interface:return_user(Username), db_interface:return_user(User)} of
+     0..|      {[], _} -> {reply, your_username_not_registered, State};
+     0..|      {_, []} -> {reply, user_not_exist, State};
+        |      {[User1], [User2]} ->
+     1..|             case lists:member(User, User1#users.friends)  of
+        |               false ->
+     1..|                 New_Friends =  [User|User1#users.friends],
+     1..|                 db_interface:update_user(Username, friends, New_Friends),
+     1..|                 io:format("~p added  ~p as a fried!~n",[Username, User]),
+     1..|                 User2#users.status == online andalso handle_message(Username, User, State, {Username, "added you as a friend"}),
+     1..|                 {reply, sent, State};
+     0..|               true ->  {reply, already_added, State}
+        |             end
+        |    end;
+        |  handle_call({delete_request, Username, User}, _From, State) ->
+     0..|    io:format("Username ~p tries to delete ~p from friends list\n",[Username, User]),
+     0..|    case {db_interface:return_user(Username), db_interface:return_user(User)} of
+     0..|      {[], _} -> {reply, your_username_not_registered, State};
+     0..|      {_, []} -> {reply, user_not_exist, State};
+        |      {[User1], [User2]} ->
+     0..|        case lists:member(User, User1#users.friends)  of
+        |          true ->
+     0..|            New_Friends =  User1#users.friends --  [User],
+     0..|            db_interface:update_user(Username, friends, New_Friends),
+     0..|            io:format("~p deleted  ~p from frieds list!~n",[Username, User]),
+     0..|            User2#users.status == online andalso handle_message(Username, User, State, {Username, "deleted you from frieds list"}),
+     0..|            {reply, sent, State};
+     0..|          false ->  {reply, not_on_your_friend_list, State}
+        |        end
+        |    end;
+        |  handle_call({get_all_messages, Username}, _From, State) ->
+     1..|    io:format("User ~p requesting all messages!~n",[Username]),
+     1..|    case is_user_logged_in(Username, State#state.users) of
+     0..|      false -> {reply, not_online, State};
+     1..|      true -> {reply, db_interface:return_all_messages(Username), State}
+        |    end;
+        |  handle_call({get_specific_user_messages, Username, User}, _From, State) ->
+     1..|    io:format("User ~p requesting messages with specifi user!~n",[Username]),
+     1..|    case is_user_logged_in(Username, State#state.users) of
+     0..|      false -> {reply, not_online, State};
+     1..|      true -> {reply, db_interface:return_messages_specific_person(Username, User), State}
+        |    end;
+        |  handle_call({get_a_message_with_key, Username, Key}, _From, State) ->
+     0..|    io:format("User ~p requesting a message at ~p!~n",[Username, Key]),
+     0..|    case is_user_logged_in(Username, State#state.users) of
+     0..|      false -> {reply, not_online, State};
+     0..|      true -> {reply, db_interface:return_message_at_time(Username, Key), State}
+        |    end;
+        |  handle_call({delete_a_message, Username, Key}, _From, State) ->
+     0..|    io:format("User ~p try to delete a message at ~p!~n",[Username, Key]),
+     0..|    case is_user_logged_in(Username, State#state.users) of
+     0..|      false -> {reply, not_online, State};
+     0..|      true -> {reply, db_interface:delete_message(Username, Key), State}
+        |    end;
+        |  handle_call({delete_all_messages, Username}, _From, State) ->
+     1..|    io:format("User ~p try to delete all messages!~n",[Username]),
+     1..|    case is_user_logged_in(Username, State#state.users) of
+     0..|      false -> {reply, not_online, State};
+     1..|      true -> {reply, db_interface:delete_all_messages(Username), State}
+        |    end;
+        |  handle_call(_Request, _From, State) ->
+     0..|    {reply, unknown_request, State}.
+        |  %%--------------------------------------------------------------------
+        |  %% @private
+        |  %% @doc
+        |  %% Handling cast messages
+        |  %%
+        |  %% @end
+        |  %%--------------------------------------------------------------------
+        |  -spec(handle_cast(Request :: term(), State :: #state{}) ->
+        |    {noreply, NewState :: #state{}} |
+        |    {noreply, NewState :: #state{}, timeout() | hibernate} |
+        |    {stop, Reason :: term(), NewState :: #state{}}).
+        |  handle_cast(_Request, State) ->
+     0..|    {noreply, State}.
+        |  
+        |  %%--------------------------------------------------------------------
+        |  %% @private
+        |  %% @doc
+        |  %% Handling all non call/cast messages
+        |  %%
+        |  %% @spec handle_info(Info, State) -> {noreply, State} |
+        |  %%                                   {noreply, State, Timeout} |
+        |  %%                                   {stop, Reason, State}
+        |  %% @end
+        |  %%--------------------------------------------------------------------
+        |  -spec(handle_info(Info :: timeout() | term(), State :: #state{}) ->
+        |    {noreply, NewState :: #state{}} |
+        |    {noreply, NewState :: #state{}, timeout() | hibernate} |
+        |    {stop, Reason :: term(), NewState :: #state{}}).
+        |  handle_info(_Info, State) ->
+     0..|    {noreply, State}.
+        |  
+        |  %%--------------------------------------------------------------------
+        |  %% @private
+        |  %% @doc
+        |  %% This function is called by a gen_server when it is about to
+        |  %% terminate. It should be the opposite of Module:init/1 and do any
+        |  %% necessary cleaning up. When it returns, the gen_server terminates
+        |  %% with Reason. The return value is ignored.
+        |  %%
+        |  %% @spec terminate(Reason, State) -> void()
+        |  %% @end
+        |  %%--------------------------------------------------------------------
+        |  -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
+        |      State :: #state{}) -> term()).
+        |  terminate(_Reason, _State) ->
+     0..|    ok.
+        |  
+        |  %%--------------------------------------------------------------------
+        |  %% @private
+        |  %% @doc
+        |  %% Convert process state when code is changed
+        |  %%
+        |  %% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
+        |  %% @end
+        |  %%--------------------------------------------------------------------
+        |  -spec(code_change(OldVsn :: term() | {down, term()}, State :: #state{},
+        |      Extra :: term()) ->
+        |    {ok, NewState :: #state{}} | {error, Reason :: term()}).
+        |  code_change(_OldVsn, State, _Extra) ->
+     0..|    {ok, State}.
+        |  
+        |  %%%===================================================================
+        |  %%% Internal functions
+        |  %%%===================================================================
+        |  is_username_taken(Username) ->
+     2..|    Username == not_logged_in orelse db_interface:return_user(Username) =/= [].
+        |  
+        |  is_user_logged_in(Username, Online_Users_List)->
+     3..|    case lists:keyfind(Username, 1, Online_Users_List) of
+     0..|      false -> false;
+     3..|      _ -> true
+        |    end.
+        |  
+        |  update_state({delete, Username}, State) ->
+     4..|    Users = State#state.users,
+     4..|    Time = State#state.started,
+     4..|    #state{started = Time, users = lists:keydelete(Username, 1, Users)};
+        |  update_state(User, State) ->
+     3..|    Old_users = State#state.users,
+     3..|    Time = State#state.started,
+     3..|    #state{started = Time, users = [User]++Old_users}.
+        |  
+        |  handle_message(_Username, User, State, Message) ->
+     4..|    Users = State#state.users,
+     4..|    case lists:keyfind(User, 1, Users) of
+     0..|      false -> offline;
+     4..|      {_, Pid} -> Pid ! Message
+        |    end.
+        |  
+        |  
